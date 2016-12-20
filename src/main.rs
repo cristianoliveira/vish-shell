@@ -1,5 +1,5 @@
 use std::io::{self, BufRead, Write};
-use std::process::Command;
+use std::process::{Command, Stdio};
 
 fn main() {
   println!("Let's do it!");
@@ -8,21 +8,19 @@ fn main() {
 }
 
 fn vish_loop() {
-    let mut working = true;
-
-    while(working) {
+    loop {
         print!(">>");
         io::stdout().flush().ok().expect("Ops... Something went wrong. :(");
 
         if let Some(mut command) = interpret(read_command()) {
-            match command.output() {
-                Ok(out) => println!("{}", String::from_utf8_lossy(&out.stdout)),
-                Err(err) => println!("Command error: {}", err)
+            if let Ok(mut child) = command.spawn() {
+                match child.wait() {
+                    Ok(res) => println!("{}", res),
+                    Err(err) => println!("{}", err)
+                }
+            } else {
+                println!("Command not found.");
             }
-
-            working = true;
-        } else {
-            working = false;
         }
     }
 }
@@ -37,35 +35,29 @@ fn read_command() -> String {
     command_line
 }
 
-fn parse(command_line: String) -> Option<ShellArgs> {
-    let parts = command_line.split_whitespace().collect();
-    return Some(ShellArgs::from(parts))
-}
+fn parse(command_line: String) -> Option<(String, Vec<String>)> {
+    let parts: Vec<&str> = command_line.split_whitespace().collect();
+    let mut iter = parts.iter();
 
-fn interpret(line: String) -> Option<Command> {
-    if let Some(shellargs) = parse(line) {
-        let mut command = Command::new(&shellargs.command);
-        for arg in &shellargs.args { command.arg(arg); }
-        println!("arguments {:?}", shellargs);
-
-        return Some(command);
+    if let Some(part) = iter.next() {
+        let cmd = part.to_string();
+        if cmd.is_empty() {
+            None
+        } else {
+            Some((cmd, iter.map(|s| s.to_string()).collect::<Vec<String>>()))
+        }
     } else {
-
         None
     }
 }
 
-#[derive(Debug)]
-struct ShellArgs {
-    command: String,
-    args: Vec<String>
-}
-impl ShellArgs {
-    pub fn from(args: Vec<&str>) -> Self {
-        let cmd = args[0].to_string();
-        let arguments = args[1..].iter().map(|s| s.to_string()).collect();
-        ShellArgs { command: cmd, args: arguments }
+fn interpret(line: String) -> Option<Command> {
+    if let Some((cmd, args)) = parse(line) {
+        let mut command = Command::new(cmd);
+        for arg in args { command.arg(arg); }
+
+        return Some(command);
+    } else {
+        None
     }
 }
-
-struct ShellCommand;
